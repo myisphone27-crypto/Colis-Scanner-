@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="theme-color" content="#0a0e14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ColisScan">
+    <meta name="description" content="Scanner de codes-barres pour la gestion des colis par distributeur">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="manifest" href="manifest.json">
+    <title>Colis Scanner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #0a0e14;
+            --bg-card: #131920;
+            --bg-input: #1c242d;
+            --accent: #00d4aa;
+            --accent-dark: #00a888;
+            --accent-glow: rgba(0, 212, 170, 0.3);
+            --danger: #ff4757;
+            --danger-dark: #c0392b;
+            --danger-glow: rgba(255, 71, 87, 0.25);
+            --success: #00d4aa;
+            --warning: #ffa502;
+            --warning-dark: #e69500;
+            --warning-glow: rgba(255, 165, 2, 0.25);
+            --text-main: #e8eaed;
+            --text-muted: #7f8c9a;
+            --border: #1e2832;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            height: 100%; position: fixed; width: 100%;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        body::before {
+            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(0,212,170,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(0,168,136,0.04) 0%, transparent 50%);
+            pointer-events: none; z-index: 0;
+        }
+
+        /* ---- HEADER ---- */
+        .app-header {
+            background: linear-gradient(180deg, var(--bg-card) 0%, rgba(19,25,32,0.95) 100%);
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            position: relative; z-index: 10; backdrop-filter: blur(10px); flex-shrink: 0;
+        }
+        #defaultHeader { display: block; }
+        #sessionHeader { display: none; }
+        .header-title {
+            font-size: 1.4rem; font-weight: 700; text-align: center; margin-bottom: 16px;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, var(--accent) 0%, #00ffcc 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .session-header-content { display: flex; justify-content: space-between; align-items: center; }
+        .session-name { font-size: 1.1rem; font-weight: 700; color: var(--text-main); }
+        .session-count {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+            color: var(--bg-body); padding: 8px 16px; border-radius: 20px;
+            font-size: 1.1rem; font-weight: 700; box-shadow: 0 4px 15px var(--accent-glow);
+        }
+        .nav-tabs { display: flex; background: var(--bg-body); border-radius: 14px; padding: 4px; gap: 4px; }
+        .nav-tab {
+            flex: 1; padding: 12px; text-align: center; border-radius: 10px;
+            font-weight: 600; font-size: 0.85rem; color: var(--text-muted);
+            cursor: pointer; transition: all 0.25s; border: none; background: transparent;
+        }
+        .nav-tab.active {
+            background: var(--accent); color: var(--bg-body);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        /* ---- MAIN ---- */
+        .main-content { flex: 1; overflow: hidden; position: relative; z-index: 1; }
+        .views-wrapper {
+            display: flex; width: 200%; height: 100%;
+            transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .view-section { width: 50%; height: 100%; overflow-y: auto; padding: 20px; }
+
+        /* ---- INPUTS ---- */
+        .input-group { display: flex; gap: 12px; margin-bottom: 20px; }
+        .input-field {
+            flex: 1; background: var(--bg-card); border: 2px solid var(--border);
+            border-radius: 12px; padding: 14px 18px; color: white; font-size: 1rem;
+            font-family: inherit; transition: all 0.2s;
+        }
+        .input-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow); }
+
+        /* ---- BUTTONS ---- */
+        .btn {
+            padding: 14px 22px; border-radius: 12px; font-weight: 600; font-size: 0.9rem;
+            cursor: pointer; border: none; transition: all 0.2s; font-family: inherit;
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+            color: var(--bg-body); box-shadow: 0 4px 15px var(--accent-glow);
+        }
+        .btn-primary:disabled { background: var(--bg-input); color: var(--text-muted); box-shadow: none; cursor: not-allowed; }
+        .btn-success { background: var(--success); color: var(--bg-body); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-secondary { background: var(--bg-card); color: var(--text-main); border: 2px solid var(--border); }
+        .btn-cancel { background: transparent; color: var(--text-muted); border: 2px solid var(--border); }
+
+        /* ---- SESSION CONTROLS ---- */
+        .session-controls { display: none; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+        .session-controls.show { display: grid; }
+        .btn-choice { padding: 22px 16px; border-radius: 16px; font-size: 0.95rem; flex-direction: column; gap: 12px; }
+        .btn-choice svg { opacity: 0.9; }
+        .btn-choice-camera {
+            background: linear-gradient(145deg, rgba(0,212,170,0.15) 0%, rgba(0,212,170,0.05) 100%);
+            border: 2px solid rgba(0,212,170,0.25); color: var(--accent);
+        }
+        .btn-choice-camera:active { background: rgba(0,212,170,0.25); border-color: var(--accent); }
+        .btn-choice-manual {
+            background: linear-gradient(145deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+            border: 2px solid var(--border); color: var(--text-main);
+        }
+        .btn-choice-manual:active { background: rgba(255,255,255,0.1); }
+        .btn-choice-manual.open { border-color: var(--accent); background: rgba(0,212,170,0.08); }
+
+        /* ---- CAMERA MODAL ---- */
+        .camera-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.92); z-index: 1500; display: none; flex-direction: column;
+            animation: modalUp 0.4s cubic-bezier(0.16,1,0.3,1); backdrop-filter: blur(8px);
+        }
+        .camera-modal-overlay.show { display: flex; }
+        @keyframes modalUp {
+            from { opacity: 0; transform: translateY(100%); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .camera-modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 20px; background: var(--bg-card); border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .camera-modal-title { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        .camera-modal-badge {
+            background: var(--accent); color: var(--bg-body);
+            padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;
+        }
+        .camera-close-btn {
+            width: 42px; height: 42px; border-radius: 50%; background: var(--bg-input);
+            border: 2px solid var(--border); color: var(--text-muted); cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        .camera-close-btn:active { background: var(--danger); color: white; border-color: var(--danger); }
+        .camera-modal-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .scanner-area { flex: 1; background: #000; position: relative; overflow: hidden; min-height: 0; }
+
+        #qr-reader {
+            width: 100% !important; height: 100% !important; border: none !important;
+            background: transparent !important; position: absolute; top: 0; left: 0;
+        }
+        #qr-reader > * { border: none !important; }
+        #qr-reader__scan_region {
+            border: none !important; background: transparent !important;
+            min-height: 0 !important; padding: 0 !important;
+            width: 100% !important; height: 100% !important;
+            position: relative !important; overflow: hidden !important;
+        }
+        #qr-reader__scan_region img { display: none !important; }
+        #qr-reader__dashboard { display: none !important; }
+        #qr-reader video {
+            width: 100% !important; height: 100% !important; object-fit: cover !important;
+            border-radius: 0 !important; border: none !important;
+            position: absolute !important; top: 0 !important; left: 0 !important;
+        }
+        #qr-reader [class*="scan"] img,
+        #qr-reader [id*="scan"] img,
+        #qr-reader__scan_region > div:not(:first-child) { display: none !important; }
+
+        .scan-flash {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; z-index: 15; opacity: 0;
+        }
+        .scan-flash.flash-success {
+            background: radial-gradient(ellipse at center, rgba(0,212,170,0.55) 0%, rgba(0,212,170,0.15) 40%, transparent 75%);
+            animation: ff 0.55s ease-out forwards;
+        }
+        .scan-flash.flash-duplicate {
+            background: radial-gradient(ellipse at center, rgba(255,71,87,0.55) 0%, rgba(255,71,87,0.15) 40%, transparent 75%);
+            animation: ff 0.55s ease-out forwards;
+        }
+        .scan-flash.flash-moved {
+            background: radial-gradient(ellipse at center, rgba(255,165,2,0.55) 0%, rgba(255,165,2,0.15) 40%, transparent 75%);
+            animation: ff 0.55s ease-out forwards;
+        }
+        @keyframes ff { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+        .flash-btn {
+            position: absolute; bottom: 16px; right: 16px; width: 52px; height: 52px;
+            border-radius: 50%; background: rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.15);
+            color: white; cursor: pointer; display: none; align-items: center; justify-content: center;
+            z-index: 20; transition: all 0.3s; backdrop-filter: blur(8px);
+        }
+        .flash-btn.show { display: flex; }
+        .flash-btn.active {
+            background: var(--warning); color: var(--bg-body);
+            border-color: var(--warning); box-shadow: 0 0 20px var(--warning-glow);
+        }
+        .camera-modal-footer {
+            padding: 16px 20px; background: var(--bg-card); border-top: 1px solid var(--border);
+            display: flex; gap: 12px; flex-shrink: 0;
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+        }
+        .camera-modal-footer .btn { flex: 1; }
+
+        .scan-frame-overlay {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            width: 75%; aspect-ratio: 4/3; z-index: 10; pointer-events: none;
+        }
+        .scan-frame-overlay::before, .scan-frame-overlay::after,
+        .sfc-bl::before, .sfc-br::before {
+            content: ''; position: absolute; width: 28px; height: 28px;
+            border-color: var(--accent); border-style: solid; border-width: 0;
+        }
+        .scan-frame-overlay::before { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 8px; }
+        .scan-frame-overlay::after { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 8px; }
+        .sfc-bl::before { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 8px; }
+        .sfc-br::before { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 8px; }
+        .sfc-bl, .sfc-br { position: absolute; width: 100%; height: 100%; top: 0; left: 0; }
+        .scan-line {
+            position: absolute; top: 0; left: 8%; right: 8%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            box-shadow: 0 0 12px var(--accent-glow);
+            animation: slm 2.5s ease-in-out infinite; z-index: 11; pointer-events: none;
+        }
+        @keyframes slm { 0%, 100% { top: 5%; } 50% { top: 92%; } }
+
+        /* ---- MANUAL ENTRY ---- */
+        .manual-entry {
+            background: var(--bg-card); padding: 16px; border-radius: 16px;
+            margin-bottom: 20px; display: none; border: 1px solid var(--border); animation: sd 0.3s ease;
+        }
+        .manual-entry.show { display: block; }
+        @keyframes sd { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .manual-textarea {
+            width: 100%; background: var(--bg-body); border: 2px solid var(--border);
+            border-radius: 12px; padding: 14px; color: white; font-size: 1rem;
+            resize: vertical; min-height: 90px; font-family: 'Consolas','Monaco',monospace;
+        }
+        .manual-textarea:focus { outline: none; border-color: var(--accent); }
+
+        /* ---- SECTION HEADERS ---- */
+        .section-header { display: flex; align-items: center; gap: 12px; margin: 8px 0 16px; }
+        .section-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--border) 0%, transparent 100%); }
+        .section-line:last-child { background: linear-gradient(90deg, transparent 0%, var(--border) 100%); }
+        .section-title {
+            font-size: 0.75rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 1.5px; white-space: nowrap;
+        }
+        .section-count {
+            font-size: 0.75rem; font-weight: 700; color: var(--accent);
+            background: rgba(0,212,170,0.1); padding: 2px 10px; border-radius: 20px; margin-left: 4px;
+        }
+
+        /* ---- LIST CARDS ---- */
+        .list-card {
+            background: var(--bg-card); border-radius: 16px; margin-bottom: 14px;
+            overflow: hidden; border: 1px solid var(--border); transition: all 0.3s;
+        }
+        .list-header {
+            padding: 18px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+        }
+        .list-info h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 5px; }
+        .list-info p { font-size: 0.82rem; color: var(--text-muted); }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
+        .list-badge {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+            color: var(--bg-body); padding: 5px 12px; border-radius: 20px;
+            font-size: 0.8rem; font-weight: 700; min-width: 36px; text-align: center;
+        }
+        .list-badge.archive { background: var(--bg-input); color: var(--text-muted); }
+        .expand-icon { margin-left: 4px; transition: transform 0.3s; color: var(--text-muted); }
+        .list-card.open > .list-header .expand-icon { transform: rotate(180deg); }
+        .list-content { display: none; border-top: 1px solid var(--border); background: rgba(0,0,0,0.15); }
+        .list-card.open > .list-content { display: block; }
+        .code-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 18px; border-bottom: 1px solid var(--border);
+        }
+        .code-row:last-child { border-bottom: none; }
+        .code-text {
+            font-family: 'Consolas','Monaco',monospace; font-size: 0.92rem;
+            color: var(--text-main); word-break: break-all;
+        }
+        .code-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+        /* ---- ICON BUTTONS ---- */
+        .icon-btn-lg {
+            width: 46px; height: 46px; border-radius: 14px; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; background: transparent; flex-shrink: 0;
+        }
+        .icon-btn-sm {
+            width: 36px; height: 36px; border-radius: 10px; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; background: transparent;
+        }
+        .btn-resume {
+            background: rgba(0,212,170,0.15); color: var(--accent);
+            box-shadow: inset 0 0 0 2px rgba(0,212,170,0.3);
+        }
+        .btn-resume:active { background: var(--accent); color: var(--bg-body); box-shadow: 0 0 16px var(--accent-glow); }
+        .btn-excel { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+        .btn-excel:active { background: rgba(255,255,255,0.12); color: var(--text-main); }
+        .btn-archive { background: rgba(255,71,87,0.1); color: var(--danger); }
+        .btn-archive:active { background: var(--danger); color: white; }
+        .btn-copy { background: rgba(0,212,170,0.08); color: var(--accent); }
+        .btn-copy:active { background: var(--accent); color: var(--bg-body); }
+        .btn-del { background: rgba(255,71,87,0.08); color: var(--danger); }
+        .btn-del:active { background: var(--danger); color: white; }
+
+        /* ---- DATE GROUPS (archive) ---- */
+        .date-group-header {
+            background: linear-gradient(90deg, rgba(0,212,170,0.1) 0%, rgba(0,212,170,0.02) 100%);
+            border-left: 4px solid var(--accent);
+        }
+        .date-group-content { padding: 12px; background: rgba(0,0,0,0.1); }
+        .date-group-content .list-card { background: var(--bg-body); margin-bottom: 10px; }
+        .search-highlight { border: 2px solid var(--success) !important; background: rgba(0,212,170,0.08); }
+
+        /* ---- ARCHIVE TOOLBAR ---- */
+        .archive-toolbar {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+            background: var(--bg-card); border-radius: 14px; padding: 10px 14px; border: 1px solid var(--border);
+        }
+        .archive-toolbar .toolbar-search {
+            flex: 1; background: var(--bg-body); border: 2px solid var(--border);
+            border-radius: 10px; padding: 10px 14px; color: white; font-size: 0.9rem; font-family: inherit;
+        }
+        .archive-toolbar .toolbar-search:focus { outline: none; border-color: var(--accent); }
+        .toolbar-icon-btn {
+            width: 44px; height: 44px; border-radius: 12px; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; flex-shrink: 0;
+            background: rgba(255,255,255,0.05); color: var(--text-muted); position: relative;
+        }
+        .toolbar-icon-btn:active { background: rgba(255,255,255,0.12); color: var(--text-main); }
+        .toolbar-icon-btn.t-excel:active { color: #1d9e6f; background: rgba(29,158,111,0.12); }
+        .toolbar-icon-btn.t-json:active { color: var(--warning); background: rgba(255,165,2,0.12); }
+        .json-dropdown {
+            position: absolute; top: calc(100% + 6px); right: 0;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 6px; min-width: 180px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5); z-index: 100;
+            display: none; animation: di 0.2s ease;
+        }
+        .json-dropdown.show { display: block; }
+        @keyframes di { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .json-dropdown-item {
+            display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+            border-radius: 8px; border: none; background: transparent;
+            color: var(--text-main); font-family: inherit; font-size: 0.88rem;
+            font-weight: 500; cursor: pointer; width: 100%;
+        }
+        .json-dropdown-item:active { background: rgba(255,255,255,0.06); }
+        .json-dropdown-item svg { flex-shrink: 0; }
+        .json-dropdown-item.dd-export svg { color: var(--accent); }
+        .json-dropdown-item.dd-import svg { color: var(--warning); }
+
+        /* ---- STORAGE BAR ---- */
+        .storage-bar {
+            background: var(--bg-card); border-radius: 12px; padding: 12px 16px;
+            margin-bottom: 16px; display: flex; align-items: center; gap: 12px;
+            border: 1px solid var(--border); font-size: 0.85rem;
+        }
+        .storage-bar .icon { color: var(--success); }
+        .storage-bar .info { flex: 1; color: var(--text-muted); }
+        .storage-bar .count { color: var(--text-main); font-weight: 600; }
+
+        /* ---- MODAL ---- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: none; align-items: center;
+            justify-content: center; z-index: 2000; backdrop-filter: blur(4px);
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: var(--bg-card); padding: 28px; border-radius: 20px;
+            width: 90%; max-width: 380px; text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid var(--border);
+        }
+        .modal-box h3 { margin-bottom: 12px; font-size: 1.1rem; }
+        .modal-box h3.danger { color: var(--danger); }
+        .modal-box h3.warning { color: var(--warning); }
+        .modal-box p { margin-bottom: 24px; color: var(--text-muted); line-height: 1.6; font-size: 0.9rem; white-space: pre-line; }
+        .modal-actions { display: flex; gap: 12px; }
+
+        /* ---- TOAST ---- */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%;
+            transform: translateX(-50%) translateY(120px);
+            background: rgba(19,25,32,0.97); color: white; border-radius: 16px;
+            box-shadow: 0 12px 44px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+            z-index: 3000; opacity: 0;
+            transition: all 0.45s cubic-bezier(0.16,1,0.3,1);
+            max-width: 92%; overflow: hidden; display: flex;
+            min-width: 240px; backdrop-filter: blur(20px);
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .toast-accent { width: 4px; flex-shrink: 0; }
+        .toast.success .toast-accent { background: linear-gradient(180deg, var(--success), #00a888); }
+        .toast.error .toast-accent { background: linear-gradient(180deg, var(--danger), var(--danger-dark)); }
+        .toast.warning .toast-accent { background: linear-gradient(180deg, var(--warning), var(--warning-dark)); }
+        .toast-body { padding: 14px 16px; flex: 1; min-width: 0; }
+        .toast-title { font-weight: 600; font-size: 0.88rem; margin-bottom: 3px; display: flex; align-items: center; gap: 8px; line-height: 1.3; }
+        .toast.success .toast-title { color: var(--success); }
+        .toast.error .toast-title { color: var(--danger); }
+        .toast.warning .toast-title { color: var(--warning); }
+        .toast-sub {
+            font-size: 0.76rem; color: var(--text-muted); white-space: pre-line;
+            word-break: break-all; font-family: 'Consolas','Monaco',monospace;
+            line-height: 1.45; padding-left: 26px; max-height: 60px; overflow: hidden;
+        }
+        .toast-icon { flex-shrink: 0; display: flex; align-items: center; }
+
+        /* ---- EMPTY STATE ---- */
+        .empty-state { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+        .empty-state svg { width: 70px; height: 70px; margin-bottom: 16px; opacity: 0.3; }
+        .empty-state h3 { font-size: 1rem; margin-bottom: 6px; }
+        .empty-state p { font-size: 0.85rem; }
+
+        /* ---- SESSION DOT ---- */
+        .session-dot {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+            display: inline-block; animation: pd 1.5s infinite; margin-right: 8px;
+        }
+        @keyframes pd {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-glow); }
+            50% { opacity: 0.6; box-shadow: 0 0 0 6px transparent; }
+        }
+
+        /* ---- SESSION CODES CARD ---- */
+        .session-codes-card { border-color: rgba(0,212,170,0.2) !important; }
+        .session-codes-card .list-content { display: block !important; }
+        .code-row-enter { animation: ce 0.3s ease; }
+        @keyframes ce { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+        #jsonFileInput { display: none; }
+        .view-section::-webkit-scrollbar { width: 4px; }
+        .view-section::-webkit-scrollbar-track { background: transparent; }
+        .view-section::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <!-- ==================== HEADER ==================== -->
+    <header class="app-header">
+        <div id="defaultHeader">
+            <h1 class="header-title">Colis Scanner</h1>
+            <nav class="nav-tabs" id="navTabs">
+                <button class="nav-tab active" data-tab="0">Scanner</button>
+                <button class="nav-tab" data-tab="1">Archives</button>
+            </nav>
+        </div>
+        <div id="sessionHeader">
+            <div class="session-header-content">
+                <span class="session-name" id="sessionNameDisplay">
+                    <span class="session-dot"></span>Distributeur
+                </span>
+                <span class="session-count" id="sessionCountDisplay">0</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== MAIN ==================== -->
+    <main class="main-content" id="mainContent">
+        <div class="views-wrapper" id="viewsWrapper">
+
+            <!-- ======= SCANNER TAB ======= -->
+            <section class="view-section" id="scanner-view">
+                <div class="input-group" id="inputGroup">
+                    <input type="text" class="input-field" id="distName" placeholder="Nom du distributeur..." autocomplete="off">
+                    <button class="btn btn-primary" id="startBtn" disabled>Start</button>
+                </div>
+
+                <div class="session-controls" id="sessionControls">
+                    <button class="btn btn-choice btn-choice-camera" id="openScannerBtn">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                            <circle cx="12" cy="13" r="4"/>
+                        </svg>
+                        Camera
+                    </button>
+                    <button class="btn btn-choice btn-choice-manual" id="toggleManualBtn">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        Saisie Manuelle
+                    </button>
+                    <button class="btn btn-success" id="finishBtnMain">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Terminer
+                    </button>
+                    <button class="btn btn-cancel" id="cancelBtnMain">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                        Annuler
+                    </button>
+                </div>
+
+                <div class="manual-entry" id="manualEntry">
+                    <p style="margin-bottom:10px;font-size:0.85rem;color:var(--text-muted);">Entree manuelle (un code par ligne)</p>
+                    <textarea class="manual-textarea" id="manualInput" placeholder="Coller les codes ici..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                    <button class="btn btn-primary" id="addManualBtn" style="width:100%;margin-top:12px;">Ajouter les codes</button>
+                </div>
+
+                <!-- Session codes (visible pendant session active) -->
+                <div id="sessionCodesSection" style="display:none;">
+                    <div class="section-header">
+                        <div class="section-line"></div>
+                        <span class="section-title">Codes scannes</span>
+                        <span class="section-count" id="sessionCodesBadge">0</span>
+                        <div class="section-line"></div>
+                    </div>
+                    <div class="list-card session-codes-card open" id="sessionCodesCard">
+                        <div class="list-header" style="cursor:default;">
+                            <div class="list-info">
+                                <h3 id="sessionCodesName" style="color:var(--accent);">-</h3>
+                                <p id="sessionCodesInfo">0 codes</p>
+                            </div>
+                        </div>
+                        <div class="list-content" id="sessionCodesList" style="display:block;"></div>
+                    </div>
+                </div>
+
+                <!-- Distributeurs list (caché pendant session active) -->
+                <div id="distributorsSection">
+                    <div class="section-header">
+                        <div class="section-line"></div>
+                        <span class="section-title">Distributeurs</span>
+                        <span class="section-count" id="distCountBadge">0</span>
+                        <div class="section-line"></div>
+                    </div>
+                    <div id="distListContainer"></div>
+                </div>
+            </section>
+
+            <!-- ======= ARCHIVES TAB ======= -->
+            <section class="view-section" id="archive-view">
+                <div class="storage-bar">
+                    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="info">Archives stockees:</span>
+                    <span class="count" id="archiveCount">0</span>
+                </div>
+                <div class="archive-toolbar">
+                    <input type="text" class="toolbar-search" id="archiveSearchInput" placeholder="Rechercher un code...">
+                    <button class="toolbar-icon-btn t-excel" id="downloadAllExcelBtn" title="Telecharger Tout (Excel)">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                    </button>
+                    <div style="position:relative;">
+                        <button class="toolbar-icon-btn t-json" id="jsonMenuBtn" title="JSON">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 6h2"/><path d="M4 10h6"/><path d="M4 14h6"/><path d="M4 18h2"/>
+                                <rect x="14" y="4" width="8" height="16" rx="2"/>
+                            </svg>
+                        </button>
+                        <div class="json-dropdown" id="jsonDropdown">
+                            <button class="json-dropdown-item dd-export" id="exportJsonBtn">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                Exporter JSON
+                            </button>
+                            <button class="json-dropdown-item dd-import" id="importJsonBtn">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                Importer JSON
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <input type="file" id="jsonFileInput" accept=".json">
+                <div id="archiveSearchResult" style="margin-bottom:16px;"></div>
+                <div id="archiveListContainer"></div>
+            </section>
+        </div>
+    </main>
+
+    <!-- ==================== CAMERA MODAL ==================== -->
+    <div class="camera-modal-overlay" id="cameraModal">
+        <div class="camera-modal-header">
+            <div class="camera-modal-title">
+                <span id="cameraModalName">Scanner</span>
+                <span class="camera-modal-badge" id="cameraModalBadge">0</span>
+            </div>
+            <button class="camera-close-btn" id="cameraCloseBtn" title="Fermer">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="camera-modal-body">
+            <div class="scanner-area" id="scannerArea">
+                <div id="qr-reader"></div>
+                <div class="scan-frame-overlay">
+                    <div class="sfc-bl"></div><div class="sfc-br"></div><div class="scan-line"></div>
+                </div>
+                <div class="scan-flash" id="scanFlash"></div>
+                <button id="flashBtn" class="flash-btn" title="Flash">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="camera-modal-footer">
+            <button class="btn btn-secondary" id="pauseBtn" style="flex:1;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+                </svg>
+                Pause
+            </button>
+            <button class="btn btn-success" id="finishBtn" style="flex:1;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Terminer
+            </button>
+        </div>
+    </div>
+
+    <!-- ==================== CONFIRM MODAL ==================== -->
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 id="confirmTitle" class="danger">Confirmation</h3>
+            <p id="confirmMessage"></p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="confirmNo" style="flex:1;">Non</button>
+                <button class="btn btn-danger" id="confirmYes" style="flex:1;">Oui</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TOAST ==================== -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+    // =========================================================
+    // DATABASE — IndexedDB
+    // =========================================================
+    const DB = 'ColisScannerDB';
+    const VER = 1;
+    const SD = 'distributors';
+    const SA = 'archive';
+    let db = null;
+
+    function openDB() {
+        return new Promise(function(ok, no) {
+            var r = indexedDB.open(DB, VER);
+            r.onerror = function() { no(r.error); };
+            r.onsuccess = function() { db = r.result; ok(db); };
+            r.onupgradeneeded = function(e) {
+                var d = e.target.result;
+                if (!d.objectStoreNames.contains(SD)) {
+                    d.createObjectStore(SD, { keyPath: 'id' });
+                }
+                if (!d.objectStoreNames.contains(SA)) {
+                    d.createObjectStore(SA, { keyPath: 'id' });
+                }
+            };
+        });
+    }
+
+    function dbAll(store) {
+        return new Promise(function(ok, no) {
+            var q = db.transaction([store], 'readonly').objectStore(store).getAll();
+            q.onsuccess = function() { ok(q.result); };
+            q.onerror = function() { no(q.error); };
+        });
+    }
+
+    function dbPut(store, data) {
+        return new Promise(function(ok, no) {
+            var q = db.transaction([store], 'readwrite').objectStore(store).put(data);
+            q.onsuccess = function() { ok(); };
+            q.onerror = function() { no(q.error); };
+        });
+    }
+
+    function dbDel(store, id) {
+        return new Promise(function(ok, no) {
+            var q = db.transaction([store], 'readwrite').objectStore(store).delete(id);
+            q.onsuccess = function() { ok(); };
+            q.onerror = function() { no(q.error); };
+        });
+    }
+
+    function dbClearPut(store, items) {
+        return new Promise(function(ok, no) {
+            var tx = db.transaction([store], 'readwrite');
+            var st = tx.objectStore(store);
+            var cr = st.clear();
+            cr.onsuccess = function() {
+                if (!items.length) { ok(); return; }
+                var n = 0;
+                items.forEach(function(i) {
+                    var q = st.add(i);
+                    q.onsuccess = function() { if (++n === items.length) ok(); };
+                    q.onerror = function() { no(q.error); };
+                });
+            };
+            cr.onerror = function() { no(cr.error); };
+        });
+    }
+
+    function dbPutAll(store, items) {
+        return new Promise(function(ok, no) {
+            if (!items.length) { ok(); return; }
+            var tx = db.transaction([store], 'readwrite');
+            var st = tx.objectStore(store);
+            var n = 0;
+            items.forEach(function(i) {
+                var q = st.put(i);
+                q.onsuccess = function() { if (++n === items.length) ok(); };
+                q.onerror = function() { no(q.error); };
+            });
+        });
+    }
+
+    // Migration depuis localStorage
+    async function migrate() {
+        try {
+            var d = localStorage.getItem('distData');
+            var a = localStorage.getItem('distArchive');
+            if (d) {
+                var p = JSON.parse(d);
+                if (p.length) await dbPutAll(SD, p);
+                localStorage.removeItem('distData');
+            }
+            if (a) {
+                var p2 = JSON.parse(a);
+                if (p2.length) await dbPutAll(SA, p2);
+                localStorage.removeItem('distArchive');
+            }
+        } catch(e) { /* silencieux */ }
+    }
+
+    // =========================================================
+    // SOUND — Web Audio API
+    // =========================================================
+    var ac = null;
+
+    function initAudio() {
+        if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+        if (ac.state === 'suspended') ac.resume();
+    }
+
+    function playTone(f1, f2, dur, wave) {
+        try {
+            initAudio();
+            var t = ac.currentTime;
+            var o = ac.createOscillator();
+            var g = ac.createGain();
+            o.type = wave;
+            o.frequency.setValueAtTime(f1, t);
+            if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur * 0.4);
+            g.gain.setValueAtTime(0.25, t);
+            g.gain.exponentialRampToValueAtTime(0.01, t + dur);
+            o.connect(g);
+            g.connect(ac.destination);
+            o.start(t);
+            o.stop(t + dur);
+        } catch(e) { /* silencieux */ }
+    }
+
+    function sOk() { playTone(880, 1320, 0.2, 'sine'); }
+
+    function sDup() {
+        try {
+            initAudio();
+            var t = ac.currentTime;
+            var o = ac.createOscillator();
+            var g = ac.createGain();
+            o.type = 'square';
+            o.frequency.setValueAtTime(220, t);
+            o.frequency.setValueAtTime(180, t + 0.15);
+            g.gain.setValueAtTime(0.12, t);
+            g.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+            o.connect(g); g.connect(ac.destination);
+            o.start(t); o.stop(t + 0.3);
+        } catch(e) {}
+    }
+
+    function sMov() { playTone(440, 880, 0.35, 'triangle'); }
+
+    // =========================================================
+    // STATE
+    // =========================================================
+    var S = {
+        dist: [],
+        arc: [],
+        session: { active: false, name: '', codes: [], id: null, resume: false },
+        scanner: null,
+        scanning: false,
+        camOpen: false,
+        torchOn: false,
+        busy: false,
+        tab: 0
+    };
+
+    var $ = function(id) { return document.getElementById(id); };
+
+    // =========================================================
+    // TOAST
+    // =========================================================
+    var TOAST_ICONS = {
+        success: '<svg class="toast-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>',
+        error: '<svg class="toast-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        warning: '<svg class="toast-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+    };
+
+    function tFlash(type) {
+        var el = $('scanFlash');
+        el.className = 'scan-flash';
+        void el.offsetWidth;
+        el.classList.add('flash-' + type);
+        setTimeout(function() { el.className = 'scan-flash'; }, 600);
+    }
+
+    function toast(title, type, sub) {
+        var el = $('toast');
+        el.innerHTML =
+            '<div class="toast-accent"></div>' +
+            '<div class="toast-body">' +
+            '<div class="toast-title">' + (TOAST_ICONS[type] || '') + title + '</div>' +
+            (sub ? '<div class="toast-sub">' + sub + '</div>' : '') +
+            '</div>';
+        el.className = 'toast ' + type + ' show';
+        clearTimeout(el._t);
+        el._t = setTimeout(function() { el.classList.remove('show'); }, type === 'warning' ? 4000 : 3200);
+    }
+
+    function fmtD(d) {
+        return new Date(d).toLocaleDateString('fr-FR', {
+            day: '2-digit', month: '2-digit', year: 'numeric'
+        });
+    }
+
+    function syncCnt() {
+        $('sessionCountDisplay').textContent = S.session.codes.length;
+        $('cameraModalBadge').textContent = S.session.codes.length;
+    }
+
+    // =========================================================
+    // CONFIRM DIALOG
+    // =========================================================
+    function showConfirm(msg, title, titleClass, yesText, yesClass) {
+        return new Promise(function(resolve) {
+            var modal = $('confirmModal');
+            $('confirmTitle').textContent = title || 'Confirmation';
+            $('confirmTitle').className = titleClass || 'danger';
+            $('confirmMessage').textContent = msg;
+
+            var yesBtn = $('confirmYes');
+            var noBtn = $('confirmNo');
+            yesBtn.textContent = yesText || 'Oui';
+            yesBtn.className = (yesClass || 'btn-danger') + ' btn';
+            yesBtn.style.flex = '1';
+            noBtn.style.flex = '1';
+
+            modal.classList.add('show');
+
+            function done(val) {
+                modal.classList.remove('show');
+                yesBtn.onclick = null;
+                noBtn.onclick = null;
+                resolve(val);
+            }
+
+            yesBtn.onclick = function() { done(true); };
+            noBtn.onclick = function() { done(false); };
+        });
+    }
+
+    // =========================================================
+    // SVG HELPERS
+    // =========================================================
+    var SVG = {
+        play: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+        excel: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+        trash: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+        chevron: '<svg class="expand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>',
+        copy: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+        delSmall: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>'
+    };
+
+    // =========================================================
+    // SWIPE NAVIGATION
+    // =========================================================
+    var tx0 = 0, ty0 = 0, tt0 = 0, isSw = false;
+
+    $('mainContent').addEventListener('touchstart', function(e) {
+        if (S.session.active || S.camOpen) return;
+        tx0 = e.touches[0].clientX;
+        ty0 = e.touches[0].clientY;
+        tt0 = Date.now();
+        isSw = false;
+    }, { passive: true });
+
+    $('mainContent').addEventListener('touchmove', function(e) {
+        if (S.session.active || S.camOpen) return;
+        if (Math.abs(e.touches[0].clientX - tx0) > Math.abs(e.touches[0].clientY - ty0)
+            && Math.abs(e.touches[0].clientX - tx0) > 10) {
+            isSw = true;
+        }
+    }, { passive: true });
+
+    $('mainContent').addEventListener('touchend', function(e) {
+        if (S.session.active || S.camOpen || !isSw) return;
+        var dx = e.changedTouches[0].clientX - tx0;
+        if (Math.abs(dx) > 60 && Date.now() - tt0 < 400) {
+            if (dx < 0 && S.tab === 0) goTab(1);
+            else if (dx > 0 && S.tab === 1) goTab(0);
+        }
+    }, { passive: true });
+
+    // =========================================================
+    // TAB SWITCHING
+    // =========================================================
+    function goTab(i) {
+        S.tab = i;
+        var tabs = document.querySelectorAll('.nav-tab');
+        tabs.forEach(function(t) { t.classList.remove('active'); });
+        tabs[i].classList.add('active');
+        $('viewsWrapper').style.transform = 'translateX(-' + (i * 50) + '%)';
+        if (i === 1) {
+            $('archiveSearchInput').value = '';
+            $('archiveSearchResult').innerHTML = '';
+            renderArchive();
+        }
+    }
+
+    document.querySelectorAll('.nav-tab').forEach(function(t) {
+        t.addEventListener('click', function() {
+            if (S.session.active) return;
+            goTab(parseInt(t.dataset.tab));
+        });
+    });
+
+    // =========================================================
+    // SEARCH
+    // =========================================================
+    $('archiveSearchInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') doSearch();
+    });
+
+    function doSearch() {
+        var q = $('archiveSearchInput').value.trim();
+        var rc = $('archiveSearchResult');
+        rc.innerHTML = '';
+        if (!q) { renderArchive(); return; }
+        for (var i = 0; i < S.arc.length; i++) {
+            if (S.arc[i].codes.indexOf(q) !== -1) {
+                var item = S.arc[i];
+                rc.innerHTML =
+                    '<div class="list-card search-highlight">' +
+                    '<div class="list-header" style="cursor:default">' +
+                    '<div class="list-info">' +
+                    '<h3 style="color:var(--success)">Trouve: ' + item.name + '</h3>' +
+                    '<p>Date: ' + fmtD(item.deletedAt || item.date) + '</p>' +
+                    '<p style="font-size:0.8rem;color:var(--text-muted);margin-top:5px">Code: ' + q + '</p>' +
+                    '</div></div></div>';
+                return;
+            }
+        }
+        rc.innerHTML =
+            '<div style="text-align:center;padding:20px;color:var(--danger)">' +
+            'Aucun resultat pour "<b>' + q + '</b>"</div>';
+    }
+
+    // =========================================================
+    // JSON DROPDOWN
+    // =========================================================
+    $('jsonMenuBtn').addEventListener('click', function(e) {
+        e.stopPropagation();
+        $('jsonDropdown').classList.toggle('show');
+    });
+    document.addEventListener('click', function() {
+        $('jsonDropdown').classList.remove('show');
+    });
+    $('jsonDropdown').addEventListener('click', function(e) { e.stopPropagation(); });
+
+    // =========================================================
+    // FLASHLIGHT
+    // =========================================================
+    $('flashBtn').addEventListener('click', async function() {
+        if (!S.scanner) return;
+        try {
+            var v = document.querySelector('#qr-reader video');
+            if (!v || !v.srcObject) return;
+            var t = v.srcObject.getVideoTracks()[0];
+            if (!t || !t.getCapabilities || !t.getCapabilities().torch) {
+                toast('Flash non supporte', 'warning');
+                return;
+            }
+            S.torchOn = !S.torchOn;
+            await t.applyConstraints({ advanced: [{ torch: S.torchOn }] });
+            $('flashBtn').classList.toggle('active', S.torchOn);
+        } catch(e) { toast('Erreur Flash', 'error'); }
+    });
+
+    // =========================================================
+    // RENDER: DISTRIBUTOR LIST
+    // =========================================================
+    function renderDist() {
+        $('distCountBadge').textContent = S.dist.length;
+        var c = $('distListContainer');
+        c.innerHTML = '';
+        if (!S.dist.length) {
+            c.innerHTML =
+                '<div class="empty-state">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+                '<path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>' +
+                '</svg><h3>Aucun distributeur</h3><p>Commencez par scanner des colis</p></div>';
+            return;
+        }
+        for (var i = 0; i < S.dist.length; i++) {
+            c.appendChild(mkCard(S.dist[i], 'dist'));
+        }
+    }
+
+    // =========================================================
+    // RENDER: SESSION CODES
+    // =========================================================
+    function renderSessionCodes() {
+        var codes = S.session.codes;
+        $('sessionCodesBadge').textContent = codes.length;
+        $('sessionCodesName').textContent = S.session.name;
+        $('sessionCodesInfo').textContent = codes.length + ' code(s) scanne(s)';
+
+        var list = $('sessionCodesList');
+        list.innerHTML = '';
+
+        if (!codes.length) {
+            list.innerHTML =
+                '<div style="text-align:center;padding:30px 20px;color:var(--text-muted);font-size:0.88rem;">' +
+                'Aucun code scanne pour le moment</div>';
+            return;
+        }
+
+        for (var idx = 0; idx < codes.length; idx++) {
+            (function(code, i) {
+                var row = document.createElement('div');
+                row.className = 'code-row code-row-enter';
+                row.innerHTML =
+                    '<span class="code-text">' + code + '</span>' +
+                    '<div class="code-actions">' +
+                    '<button class="icon-btn-sm btn-copy" data-act="copy">' + SVG.copy + '</button>' +
+                    '<button class="icon-btn-sm btn-del" data-act="del">' + SVG.delSmall + '</button>' +
+                    '</div>';
+
+                row.addEventListener('click', async function(e) {
+                    var b = e.target.closest('[data-act]');
+                    if (!b) return;
+                    if (b.dataset.act === 'copy') {
+                        try { await navigator.clipboard.writeText(code); } catch(e) {}
+                        toast('Code copie', 'success');
+                        return;
+                    }
+                    if (b.dataset.act === 'del') {
+                        if (!await showConfirm('Supprimer ce code ?', 'Supprimer', 'danger', 'Oui', 'btn-danger')) return;
+                        S.session.codes.splice(i, 1);
+                        syncCnt();
+                        renderSessionCodes();
+                        toast('Code supprime', 'warning');
+                    }
+                });
+                list.appendChild(row);
+            })(codes[idx], idx);
+        }
+    }
+
+    // =========================================================
+    // RENDER: ARCHIVE
+    // =========================================================
+    function renderArchive() {
+        var c = $('archiveListContainer');
+        c.innerHTML = '';
+        $('archiveCount').textContent = S.arc.length;
+
+        // Grouper par date
+        var groups = {};
+        var sorted = S.arc.slice().sort(function(a, b) {
+            return new Date(b.deletedAt || b.date) - new Date(a.deletedAt || a.date);
+        });
+        for (var i = 0; i < sorted.length; i++) {
+            var item = sorted[i];
+            var key = fmtD(item.deletedAt || item.date);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(item);
+        }
+
+        var keys = Object.keys(groups);
+        if (!keys.length) {
+            if (!$('archiveSearchResult').innerHTML) {
+                c.innerHTML =
+                    '<div class="empty-state">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+                    '<rect x="2" y="4" width="20" height="16" rx="2"/>' +
+                    '<path d="M10 9v6M14 9v6"/></svg>' +
+                    '<h3>Aucune archive</h3><p>Les archives apparaitront ici</p></div>';
+            }
+            return;
+        }
+
+        for (var k = 0; k < keys.length; k++) {
+            var dk = keys[k];
+            var items = groups[dk];
+            var total = 0;
+            for (var j = 0; j < items.length; j++) total += items[j].codes.length;
+
+            var card = document.createElement('div');
+            card.className = 'list-card';
+
+            var hdr = document.createElement('div');
+            hdr.className = 'list-header date-group-header';
+            hdr.innerHTML =
+                '<div class="list-info"><h3>' + dk + '</h3>' +
+                '<p>' + items.length + ' distributeur(s) - ' + total + ' colis</p></div>' +
+                '<div class="header-actions">' +
+                '<button class="icon-btn-lg btn-archive" data-act="del-date" data-date="' + dk + '" title="Supprimer ce groupe">' + SVG.trash + '</button>' +
+                SVG.chevron + '</div>';
+
+            (function(dk2, cardEl) {
+                hdr.addEventListener('click', async function(e) {
+                    var b = e.target.closest('[data-act="del-date"]');
+                    if (b) {
+                        e.stopPropagation();
+                        if (await showConfirm('Supprimer toutes les archives du ' + b.dataset.date + ' ?', 'Supprimer groupe', 'danger', 'Oui', 'btn-danger')) {
+                            S.arc = S.arc.filter(function(x) {
+                                return fmtD(x.deletedAt || x.date) !== b.dataset.date;
+                            });
+                            await dbClearPut(SA, S.arc);
+                            toast('Groupe supprime', 'success');
+                            renderArchive();
+                        }
+                        return;
+                    }
+                    cardEl.classList.toggle('open');
+                });
+            })(dk, card);
+
+            var cnt = document.createElement('div');
+            cnt.className = 'list-content date-group-content';
+            for (var m = 0; m < items.length; m++) {
+                cnt.appendChild(mkCard(items[m], 'archive'));
+            }
+
+            card.appendChild(hdr);
+            card.appendChild(cnt);
+            c.appendChild(card);
+        }
+    }
+
+    // =========================================================
+    // MAKE CARD (distributor ou archive)
+    // =========================================================
+    function mkCard(item, type) {
+        var card = document.createElement('div');
+        card.className = 'list-card';
+        card.dataset.id = item.id;
+
+        var hdr = document.createElement('div');
+        hdr.className = 'list-header';
+
+        // Boutons d'action selon le type
+        var actionsHtml = '';
+        if (type === 'dist') {
+            actionsHtml =
+                '<button class="icon-btn-lg btn-resume" data-act="resume" data-id="' + item.id + '" title="Reprendre">' + SVG.play + '</button>' +
+                '<button class="icon-btn-lg btn-excel" data-act="excel" data-id="' + item.id + '" title="Excel">' + SVG.excel + '</button>' +
+                '<button class="icon-btn-lg btn-archive" data-act="archive" data-id="' + item.id + '" title="Archiver">' + SVG.trash + '</button>';
+        } else {
+            actionsHtml =
+                '<button class="icon-btn-lg btn-excel" data-act="excel" data-id="' + item.id + '" title="Excel">' + SVG.excel + '</button>' +
+                '<button class="icon-btn-lg btn-archive" data-act="del-arch" data-id="' + item.id + '" title="Supprimer">' + SVG.trash + '</button>';
+        }
+
+        var badgeClass = type === 'archive' ? 'list-badge archive' : 'list-badge';
+        hdr.innerHTML =
+            '<div class="list-info"><h3>' + item.name + '</h3>' +
+            '<p>' + item.codes.length + ' codes - ' + fmtD(item.date || item.deletedAt) + '</p></div>' +
+            '<div class="header-actions">' + actionsHtml +
+            '<span class="' + badgeClass + '">' + item.codes.length + '</span>' +
+            SVG.chevron + '</div>';
+
+        hdr.addEventListener('click', function(e) {
+            var b = e.target.closest('[data-act]');
+            if (b) {
+                e.stopPropagation();
+                doCardAct(b.dataset.act, b.dataset.id, b.dataset.date);
+                return;
+            }
+            card.classList.toggle('open');
+        });
+
+        var cnt = document.createElement('div');
+        cnt.className = 'list-content';
+
+        for (var idx = 0; idx < item.codes.length; idx++) {
+            (function(code, i) {
+                var row = document.createElement('div');
+                row.className = 'code-row';
+
+                var delHtml = '';
+                if (type === 'dist') {
+                    delHtml = '<button class="icon-btn-sm btn-del" data-act="del-code" data-idx="' + i + '">' + SVG.delSmall + '</button>';
+                }
+
+                row.innerHTML =
+                    '<span class="code-text">' + code + '</span>' +
+                    '<div class="code-actions">' +
+                    '<button class="icon-btn-sm btn-copy" data-act="copy">' + SVG.copy + '</button>' +
+                    delHtml + '</div>';
+
+                row.addEventListener('click', async function(e) {
+                    var b = e.target.closest('[data-act]');
+                    if (!b) return;
+                    e.stopPropagation();
+
+                    if (b.dataset.act === 'copy') {
+                        try { await navigator.clipboard.writeText(code); } catch(e) {}
+                        toast('Code copie', 'success');
+                    } else if (b.dataset.act === 'del-code') {
+                        await delCode(item.id, parseInt(b.dataset.idx));
+                    }
+                });
+                cnt.appendChild(row);
+            })(item.codes[idx], idx);
+        }
+
+        card.appendChild(hdr);
+        card.appendChild(cnt);
+        return card;
+    }
+
+    // =========================================================
+    // CARD ACTIONS
+    // =========================================================
+    async function doCardAct(act, id, extra) {
+        if (act === 'resume') {
+            await doResume(id);
+        } else if (act === 'excel') {
+            doExcel(id);
+        } else if (act === 'archive') {
+            await doArchive(id);
+        } else if (act === 'del-arch') {
+            if (await showConfirm('Supprimer cette archive definitivement ?', 'Supprimer', 'danger', 'Oui', 'btn-danger')) {
+                S.arc = S.arc.filter(function(x) { return x.id !== id; });
+                await dbDel(SA, id);
+                toast('Archive supprimee', 'success');
+                renderArchive();
+            }
+        }
+    }
+
+    async function delCode(id, idx) {
+        if (!await showConfirm('Supprimer ce code ?', 'Supprimer', 'danger', 'Oui', 'btn-danger')) return;
+        var item = S.dist.find(function(d) { return d.id === id; });
+        if (!item) return;
+        item.codes.splice(idx, 1);
+        if (!item.codes.length) {
+            S.dist = S.dist.filter(function(d) { return d.id !== id; });
+            await dbClearPut(SD, S.dist);
+            toast('Distributeur supprime', 'warning');
+        } else {
+            await dbPut(SD, item);
+            toast('Code supprime', 'warning');
+        }
+        renderDist();
+    }
+
+    async function doArchive(id) {
+        var d = S.dist.find(function(x) { return x.id === id; });
+        if (!d) return;
+        d.deletedAt = new Date().toISOString();
+        S.arc.push(d);
+        S.dist = S.dist.filter(function(x) { return x.id !== id; });
+        await dbClearPut(SD, S.dist);
+        await dbPut(SA, d);
+        toast('Archive', 'success');
+        renderDist();
+        $('archiveCount').textContent = S.arc.length;
+    }
+
+    function doExcel(id) {
+        var item = S.dist.find(function(d) { return d.id === id; })
+               || S.arc.find(function(a) { return a.id === id; });
+        if (!item) return;
+
+        var sp = [], nm = [];
+        for (var i = 0; i < item.codes.length; i++) {
+            var c = item.codes[i];
+            if (c.indexOf('DH') === 0 || c.indexOf('DXH') === 0 || c.indexOf('DSH') === 0) {
+                sp.push(c);
+            } else {
+                nm.push(c);
+            }
+        }
+        var data = [];
+        for (var j = 0; j < sp.length; j++) data.push([sp[j]]);
+        if (sp.length && nm.length) data.push([]);
+        for (var k = 0; k < nm.length; k++) data.push([nm[k]]);
+
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Codes');
+        XLSX.writeFile(wb, item.name + '.xlsx');
+        toast('Fichier telecharge', 'success');
+    }
+
+    // =========================================================
+    // RESUME SESSION
+    // =========================================================
+    async function doResume(id) {
+        var d = S.dist.find(function(x) { return x.id === id; });
+        if (!d) return;
+
+        // Si session active, sauvegarder d'abord
+        if (S.session.active) {
+            if (S.session.codes.length > 0) {
+                if (!await showConfirm(
+                    'Session "' + S.session.name + '" en cours (' + S.session.codes.length + ' codes).\nSauvegarder avant de reprendre "' + d.name + '" ?',
+                    'Session en cours', 'warning', 'Sauvegarder', 'btn-primary'
+                )) return;
+                await doSave();
+            }
+            await stopCam();
+        }
+
+        // Nouvelle session depuis le distributeur existant
+        S.session = {
+            active: true,
+            name: d.name,
+            codes: d.codes.slice(),
+            id: d.id,
+            resume: true
+        };
+        $('distName').value = d.name;
+        enterSession();
+        startCam();
+    }
+
+    // =========================================================
+    // SAVE SESSION
+    // =========================================================
+    async function doSave() {
+        var s = S.session;
+        if (!s.active) return;
+
+        if (s.resume && s.id) {
+            var existing = S.dist.find(function(d) { return d.id === s.id; });
+            if (existing) {
+                existing.codes = s.codes.slice();
+                existing.date = new Date().toISOString();
+                await dbPut(SD, existing);
+            }
+        } else if (s.codes && s.codes.length > 0) {
+            var newItem = {
+                id: Date.now().toString(),
+                name: s.name,
+                codes: s.codes.slice(),
+                date: new Date().toISOString()
+            };
+            S.dist.push(newItem);
+            await dbPut(SD, newItem);
+        }
+    }
+
+    // =========================================================
+    // JSON EXPORT / IMPORT
+    // =========================================================
+    $('exportJsonBtn').addEventListener('click', function() {
+        $('jsonDropdown').classList.remove('show');
+        if (!S.arc.length) { toast('Aucune archive', 'warning'); return; }
+        try {
+            var blob = new Blob([JSON.stringify(S.arc, null, 2)], { type: 'application/json' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'archives_' + new Date().toISOString().split('T')[0] + '.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            toast(S.arc.length + ' exportee(s)', 'success');
+        } catch(e) { toast("Erreur d'export", 'error'); }
+    });
+
+    $('importJsonBtn').addEventListener('click', function() {
+        $('jsonDropdown').classList.remove('show');
+        $('jsonFileInput').click();
+    });
+
+    $('jsonFileInput').addEventListener('change', async function(e) {
+        var f = e.target.files[0];
+        if (!f) return;
+        $('jsonFileInput').value = '';
+        try {
+            var text = await f.text();
+            var data = JSON.parse(text);
+            if (!Array.isArray(data)) { toast('Format invalide', 'error'); return; }
+
+            var valid = data.filter(function(i) {
+                return i && typeof i.id === 'string' && typeof i.name === 'string' && Array.isArray(i.codes);
+            });
+            if (!valid.length) { toast('Aucune donnee valide', 'error'); return; }
+            if (valid.length < data.length) {
+                toast((data.length - valid.length) + ' invalide(s) ignore(s)', 'warning');
+            }
+
+            if (await showConfirm(
+                valid.length + ' archive(s) valide(s).\nRemplacer tout ?\n(Non = fusionner)',
+                'Importer', 'warning', 'Oui, remplacer', 'btn-danger'
+            )) {
+                S.arc = valid;
+                await dbClearPut(SA, S.arc);
+                toast(valid.length + ' importee(s)', 'success');
+            } else {
+                var ids = {};
+                for (var i = 0; i < S.arc.length; i++) ids[S.arc[i].id] = true;
+                var n = 0;
+                for (var j = 0; j < valid.length; j++) {
+                    if (!ids[valid[j].id]) {
+                        S.arc.push(valid[j]);
+                        ids[valid[j].id] = true;
+                        n++;
+                    }
+                }
+                await dbClearPut(SA, S.arc);
+                toast(n ? n + ' nouvelle(s)' : 'Toutes existent deja', n ? 'success' : 'warning');
+            }
+            renderArchive();
+        } catch(e) {
+            toast(e instanceof SyntaxError ? 'JSON invalide' : 'Erreur', 'error');
+        }
+    });
+
+    $('downloadAllExcelBtn').addEventListener('click', function() {
+        if (!S.arc.length) { toast('Aucune archive', 'warning'); return; }
+        try {
+            var wb = XLSX.utils.book_new();
+            for (var i = 0; i < S.arc.length; i++) {
+                var item = S.arc[i];
+                var rows = [];
+                for (var j = 0; j < item.codes.length; j++) rows.push([item.codes[j]]);
+                var ws = XLSX.utils.aoa_to_sheet(rows);
+                var name = item.name.replace(/[\\\/\?\*\[\]]/g, '_').substring(0, 31);
+                var fn = name, c = 1;
+                while (wb.SheetNames.indexOf(fn) !== -1) {
+                    fn = name.substring(0, 28) + '_' + c++;
+                }
+                XLSX.utils.book_append_sheet(wb, ws, fn);
+            }
+            XLSX.writeFile(wb, 'Toutes_Archives_' + new Date().toISOString().split('T')[0] + '.xlsx');
+            toast('Fichier Excel genere', 'success');
+        } catch(e) { toast('Erreur', 'error'); }
+    });
+
+    // =========================================================
+    // SESSION UI
+    // =========================================================
+    function enterSession() {
+        $('inputGroup').style.display = 'none';
+        $('sessionControls').classList.add('show');
+        $('manualEntry').classList.remove('show');
+        $('toggleManualBtn').classList.remove('open');
+        $('defaultHeader').style.display = 'none';
+        $('sessionHeader').style.display = 'block';
+        $('sessionNameDisplay').innerHTML = '<span class="session-dot"></span>' + S.session.name;
+        $('sessionCodesSection').style.display = 'block';
+        $('distributorsSection').style.display = 'none';
+        syncCnt();
+        renderSessionCodes();
+    }
+
+    function resetHome() {
+        $('inputGroup').style.display = 'flex';
+        $('sessionControls').classList.remove('show');
+        $('manualEntry').classList.remove('show');
+        $('toggleManualBtn').classList.remove('open');
+        $('distName').value = '';
+        $('startBtn').disabled = true;
+        S.session = { active: false, name: '', codes: [], id: null, resume: false };
+        S.busy = false;
+        $('defaultHeader').style.display = 'block';
+        $('sessionHeader').style.display = 'none';
+        $('sessionCodesSection').style.display = 'none';
+        $('distributorsSection').style.display = 'block';
+        renderDist();
+        $('archiveCount').textContent = S.arc.length;
+    }
+
+    // =========================================================
+    // CAMERA
+    // =========================================================
+    async function startCam() {
+        if (S.camOpen) return;
+        S.camOpen = true;
+        $('cameraModalName').textContent = S.session.name;
+        $('cameraModalBadge').textContent = S.session.codes.length;
+        $('cameraModal').classList.add('show');
+        $('flashBtn').classList.add('show');
+
+        try {
+            S.scanner = new Html5Qrcode('qr-reader');
+            await S.scanner.start(
+                { facingMode: 'environment' },
+                {
+                    fps: 30,
+                    qrbox: function(w, h) {
+                        return { width: Math.min(w * 0.85, 360), height: Math.min(w * 0.6, 260) };
+                    },
+                    aspectRatio: 1.0,
+                    useBarCodeDetectorIfSupported: true
+                },
+                onScan,
+                function() {}
+            );
+            S.scanning = true;
+            $('pauseBtn').innerHTML =
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+                '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause';
+            $('pauseBtn').className = 'btn btn-secondary';
+        } catch(e) {
+            console.error(e);
+            toast('Erreur Camera', 'error');
+            $('cameraModal').classList.remove('show');
+            S.camOpen = false;
+            $('flashBtn').classList.remove('show');
+        }
+    }
+
+    async function stopCam() {
+        if (S.torchOn) {
+            S.torchOn = false;
+            $('flashBtn').classList.remove('active');
+        }
+        $('flashBtn').classList.remove('show');
+        $('cameraModal').classList.remove('show');
+        S.camOpen = false;
+
+        if (S.scanner) {
+            try { await S.scanner.stop(); } catch(e) {}
+            S.scanner = null;
+            S.scanning = false;
+        }
+
+        var v = document.querySelector('#qr-reader video');
+        if (v && v.srcObject) {
+            v.srcObject.getTracks().forEach(function(t) { t.stop(); });
+            v.srcObject = null;
+        }
+    }
+
+    // =========================================================
+    // CAMERA MODAL BUTTONS
+    // =========================================================
+    $('cameraCloseBtn').addEventListener('click', function() { stopCam(); });
+
+    $('openScannerBtn').addEventListener('click', function() {
+        if (S.session.active) startCam();
+    });
+
+    $('toggleManualBtn').addEventListener('click', function() {
+        $('manualEntry').classList.toggle('show');
+        $('toggleManualBtn').classList.toggle('open');
+    });
+
+    // =========================================================
+    // START NEW SESSION
+    // =========================================================
+    $('distName').addEventListener('input', function() {
+        $('startBtn').disabled = !$('distName').value.trim();
+    });
+
+    $('startBtn').addEventListener('click', function() {
+        var name = $('distName').value.trim();
+        if (!name) return;
+        S.session = { active: true, name: name, codes: [], id: null, resume: false };
+        enterSession();
+        toast('Session: ' + name, 'success');
+    });
+
+    // =========================================================
+    // SCAN HANDLER
+    // =========================================================
+    async function onScan(code) {
+        if (S.busy) return;
+        S.busy = true;
+        try {
+            // Dupliqué dans la session actuelle
+            if (S.session.codes.indexOf(code) !== -1) {
+                sDup();
+                tFlash('duplicate');
+                if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+                toast('Code duplique', 'error', code);
+                return;
+            }
+
+            // Code existe chez un autre distributeur → le deplacer
+            var other = S.dist.find(function(d) {
+                return d.id !== S.session.id && d.codes.indexOf(code) !== -1;
+            });
+
+            if (other) {
+                other.codes = other.codes.filter(function(c) { return c !== code; });
+                if (!other.codes.length) {
+                    S.dist = S.dist.filter(function(d) { return d.id !== other.id; });
+                    await dbClearPut(SD, S.dist);
+                } else {
+                    await dbPut(SD, other);
+                }
+                S.session.codes.push(code);
+                syncCnt();
+                renderSessionCodes();
+                tFlash('moved');
+                sMov();
+                if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
+                toast('Code deplace', 'warning', '"' + other.name + '" → "' + S.session.name + '"\n' + code);
+                return;
+            }
+
+            // Nouveau code
+            S.session.codes.push(code);
+            syncCnt();
+            renderSessionCodes();
+            tFlash('success');
+            sOk();
+            if (navigator.vibrate) navigator.vibrate(80);
+            toast('Code ajoute', 'success', code);
+        } finally {
+            S.busy = false;
+        }
+    }
+
+    // =========================================================
+    // PAUSE / RESUME CAMERA
+    // =========================================================
+    $('pauseBtn').addEventListener('click', async function() {
+        if (!S.scanner) return;
+        if (S.scanning) {
+            await S.scanner.pause();
+            S.scanning = false;
+            $('pauseBtn').innerHTML =
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">' +
+                '<polygon points="6 3 20 12 6 21 6 3"/></svg> Reprendre';
+            $('pauseBtn').className = 'btn btn-primary';
+        } else {
+            await S.scanner.resume();
+            S.scanning = true;
+            $('pauseBtn').innerHTML =
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+                '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause';
+            $('pauseBtn').className = 'btn btn-secondary';
+        }
+    });
+
+    // =========================================================
+    // TERMINER
+    // =========================================================
+    async function doFinish() {
+        if (!S.session.active) return;
+        if (!S.session.codes.length) { toast('Aucun code scanne', 'error'); return; }
+        await doSave();
+        await stopCam();
+        toast('Session sauvegardee: ' + S.session.codes.length + ' code(s)', 'success');
+        resetHome();
+    }
+
+    $('finishBtn').addEventListener('click', doFinish);
+    $('finishBtnMain').addEventListener('click', doFinish);
+
+    // =========================================================
+    // ANNULER
+    // =========================================================
+    $('cancelBtnMain').addEventListener('click', async function() {
+        if (!S.session.active) return;
+        if (S.session.codes.length > 0) {
+            var save = await showConfirm(
+                'Voulez-vous sauvegarder les ' + S.session.codes.length + ' code(s) ?',
+                'Sauvegarder les codes', 'warning', 'Oui', 'btn-primary'
+            );
+            if (save) {
+                await doSave();
+                toast('Session sauvegardee', 'success');
+            }
+        }
+        await stopCam();
+        resetHome();
+    });
+
+    // =========================================================
+    // SAISIE MANUELLE
+    // =========================================================
+    $('addManualBtn').addEventListener('click', async function() {
+        var raw = $('manualInput').value.trim();
+        if (!raw) return;
+        var codes = raw.split('\n').map(function(c) { return c.trim(); }).filter(function(c) { return c.length > 0; });
+        if (!codes.length) return;
+
+        var added = 0, dups = 0, moved = 0;
+        var movedList = [];
+
+        for (var i = 0; i < codes.length; i++) {
+            var code = codes[i];
+
+            if (S.session.codes.indexOf(code) !== -1) { dups++; continue; }
+
+            var other = S.dist.find(function(d) {
+                return d.id !== S.session.id && d.codes.indexOf(code) !== -1;
+            });
+
+            if (other) {
+                other.codes = other.codes.filter(function(c) { return c !== code; });
+                if (!other.codes.length) {
+                    S.dist = S.dist.filter(function(d) { return d.id !== other.id; });
+                    await dbClearPut(SD, S.dist);
+                } else {
+                    await dbPut(SD, other);
+                }
+                moved++;
+                movedList.push(code + ': "' + other.name + '"');
+                S.session.codes.push(code);
+                added++;
+            } else {
+                S.session.codes.push(code);
+                added++;
+            }
+        }
+
+        syncCnt();
+        if (added) {
+            $('manualInput').value = '';
+            sOk();
+            renderSessionCodes();
+        }
+
+        if (moved && added - moved) {
+            tFlash('moved'); sMov();
+            toast(moved + ' deplace(s), ' + (added - moved) + ' ajoute(s)', 'warning',
+                movedList.slice(0, 4).join('\n') + (movedList.length > 4 ? '\n...' : ''));
+        } else if (moved) {
+            tFlash('moved'); sMov();
+            toast(moved + ' deplace(s)', 'warning', movedList.slice(0, 5).join('\n'));
+        } else if (added) {
+            tFlash('success');
+            toast(added + ' ajoute(s)', 'success');
+        }
+
+        if (dups) {
+            (function(d) {
+                setTimeout(function() { toast(d + ' en double ignore(s)', 'error'); }, moved ? 800 : 0);
+            })(dups);
+        }
+    });
+
+    // =========================================================
+    // VISIBILITY CHANGE (pause/resume camera)
+    // =========================================================
+    document.addEventListener('visibilitychange', async function() {
+        if (document.visibilityState === 'hidden' && S.scanner && S.scanning && S.camOpen) {
+            try { await S.scanner.pause(); S.scanning = false; } catch(e) {}
+        } else if (document.visibilityState === 'visible' && S.scanner && S.session.active && S.camOpen && !S.scanning) {
+            try {
+                await S.scanner.resume();
+                S.scanning = true;
+            } catch(e) {
+                try { await S.scanner.stop(); } catch(er) {}
+                S.scanner = null;
+                startCam();
+            }
+        }
+    });
+
+    // =========================================================
+    // SERVICE WORKER REGISTRATION
+    // =========================================================
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('./sw.js')
+                .then(function(reg) {
+                    console.log('[PWA] Service Worker enregistre, scope:', reg.scope);
+                })
+                .catch(function(err) {
+                    console.warn('[PWA] Erreur SW:', err);
+                });
+        });
+    }
+
+    // =========================================================
+    // INIT
+    // =========================================================
+    async function init() {
+        try {
+            await openDB();
+            await migrate();
+            S.dist = await dbAll(SD);
+            S.arc = await dbAll(SA);
+            renderDist();
+            $('archiveCount').textContent = S.arc.length;
+        } catch(e) {
+            console.error(e);
+            toast('Erreur de chargement', 'error');
+        }
+    }
+
+    init();
+    </script>
+</body>
+</html>
